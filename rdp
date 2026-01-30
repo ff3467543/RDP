@@ -1,0 +1,46 @@
+name: RDP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  secure-rdp:
+    runs-on: windows-latest
+    timeout-minutes: 360   # 6 HOURS (MAX POSSIBLE)
+
+    steps:
+      - name: Enable RDP
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+            -Name "fDenyTSConnections" -Value 0
+          netsh advfirewall firewall add rule name="RDP" dir=in action=allow protocol=TCP localport=3389
+          Restart-Service TermService -Force
+
+      - name: Create RDP User
+        run: |
+          $pass = "P@ss$(Get-Random -Minimum 1000 -Maximum 9999)"
+          net user RDP $pass /add
+          net localgroup administrators RDP /add
+          net localgroup "Remote Desktop Users" RDP /add
+          echo "USER=RDP" >> $env:GITHUB_ENV
+          echo "PASS=$pass" >> $env:GITHUB_ENV
+
+      - name: Install Tailscale
+        run: |
+          Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi -OutFile ts.msi
+          Start-Process msiexec.exe -ArgumentList "/i ts.msi /quiet" -Wait
+
+      - name: Connect Tailscale
+        run: |
+          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }}
+          $ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
+          echo "IP=$ip" >> $env:GITHUB_ENV
+
+      - name: RDP Info
+        run: |
+          echo "======================"
+          echo "IP: $env:IP"
+          echo "User: $env:USER"
+          echo "Pass: $env:PASS"
+          echo "======================"
+          while ($true) { Start-Sleep 300 }
